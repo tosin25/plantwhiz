@@ -63,10 +63,6 @@ body {
   background: #68000B !important;
 }
 
-.bg-green {
-  background: #386641 !important;
-}
-
 /* =================================
    SUN
 ================================= */
@@ -190,7 +186,7 @@ h1 {
 }
 
 /* =================================
-   SUPPORTING TEXT
+   SUPPORTING TEXT (PURE WHITE OVERRIDE)
 ================================= */
 
 p {
@@ -389,8 +385,8 @@ p {
 .progress-number {
   color: #fff9f9;
   font-size: 14px;
-  margin-top: 6px;
-  margin-bottom: 8px;
+  margin-top: 6px; /* Space between loader ring and percentage number */
+  margin-bottom: 8px; /* Space between percentage number and "Getting PlantWhiz Ready" text */
 }
 
 /* =================================
@@ -502,18 +498,30 @@ p {
   overflow: hidden;
 }
 
+/* 3D Fanned Arch Rotations */
 .curved-arch-card.arch-pos-0 { transform: translateX(10px) translateY(12px) rotateY(28deg) scale(0.85); filter: brightness(0.65); }
 .curved-arch-card.arch-pos-1 { transform: translateX(5px) translateY(4px) rotateY(14deg) scale(0.92); filter: brightness(0.8); }
 .curved-arch-card.arch-pos-2 { transform: translateX(0) translateY(-6px) rotateY(0deg) scale(1.12); filter: brightness(1.05); z-index: 25; }
 .curved-arch-card.arch-pos-3 { transform: translateX(-5px) translateY(4px) rotateY(-14deg) scale(0.92); filter: brightness(0.8); }
 .curved-arch-card.arch-pos-4 { transform: translateX(-10px) translateY(12px) rotateY(-28deg) scale(0.85); filter: brightness(0.65); }
 
+/* Active Center Pop & Soft Glow */
 .curved-arch-card.arch-card-active {
   transform: translateX(0) translateY(-10px) rotateY(0deg) scale(1.18) !important;
   filter: brightness(1.1) !important;
   box-shadow: 0 0 18px rgba(255, 255, 255, 0.4), 0 16px 36px rgba(0, 0, 0, 0.45) !important;
   border: 1.5px solid rgba(255, 255, 255, 0.7);
   z-index: 30;
+}
+
+/* Filled Canvas Artwork inside each card */
+.arch-card-artwork {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  opacity: 0.95;
+  pointer-events: none;
 }
 
 .deck-card-title {
@@ -594,7 +602,7 @@ p {
 }
 
 /* =================================
-   STATION SELECT CARDS (NCRI IBADAN & HQ)
+   STATION SELECT & PLANTING CHECK SCREENS
 ================================= */
 
 .crop-heading-olive {
@@ -628,9 +636,8 @@ p {
   height: 125px;
   border-radius: 16px;
   display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
-  padding: 14px;
+  align-items: flex-end;
+  padding: 12px;
   cursor: pointer;
   box-shadow: 0 8px 22px rgba(0, 0, 0, 0.25);
   transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.3s ease;
@@ -652,7 +659,7 @@ p {
 }
 
 .station-card-active {
-  box-shadow: 0 0 20px rgba(255, 255, 255, 0.6), 0 12px 28px rgba(0, 0, 0, 0.35) !important;
+  box-shadow: 0 0 20px rgba(255, 255, 255, 0.6), 0 12px 28px rgba(0, 0, 0, 0.35);
   border: 2px solid #fff;
 }
 
@@ -689,7 +696,7 @@ p {
 }
 
 /* =================================
-   CHECKING & RESULT SCREENS OVERRIDE
+   EXACT POSITIONING FOR CHECKING & RESULT SCREENS
 ================================= */
 
 .conversation:has(.top-badge-placeholder) h1 {
@@ -698,9 +705,32 @@ p {
   margin-top: 15px !important;
   margin-bottom: 15px !important;
   text-align: center;
-  color: #2F2727 !important;
+  color: #2F2727 !important; /* Fixed dark contrast color for Planting Intro / Check screens */
 }
 
 .conversation:has(.top-badge-placeholder) .top-badge-placeholder {
   margin: 0 auto 15px auto !important;
+}
+
+.conversation:has(.top-badge-placeholder) h1 {
+  position: relative !important;
+  top: -370px !important;
+  margin-top: 15px !important;
+  margin-bottom: 15px !important;
+  text-align: center;
+  color: #2F2727 !important; /* <--- Add this line to fix the text color */
+}
+
+/* =================================
+   FIX: Mobile Sun Overlap
+================================= */
+.sun {
+  top: 20px !important;
+  left: 20px !important;
+  width: 60px !important;
+  height: 60px !important;
+}
+
+.conversation {
+  padding-top: 60px !important;
 }

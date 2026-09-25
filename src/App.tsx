@@ -9,7 +9,6 @@ type GateState =
   | "DEADLINE_CHECK"
   | "CROP_SELECT"
   | "STATION_SELECT"
-  | "GPS_CONFIRM"
   | "STATION_UNAVAILABLE"
   | "PLANTING_INTRO"
   | "PLANTING_CHECKING"
@@ -23,48 +22,14 @@ type GateState =
   | "WATERLOG_RESULT"
   | "PEST_CHECKING"
   | "PEST_RESULT"
-  | "FINAL_DECISION_PASS";
+  | "FINAL_DECISION_PASS"
+  | "FINAL_DECISION_DEADLINE"
+  | "FINAL_DECISION_STOP";
 
 interface CropItem {
   name: string;
   color: string;
   image: string;
-}
-
-// ==========================================
-// STATION & GPS COORDINATE MAPPINGS
-// ==========================================
-const STATION_COORDINATES: Record<string, { lat: number; lng: number }> = {
-  "NCRI Ibadan": { lat: 7.3686, lng: 3.8442 },
-  "Bida Station HQ": { lat: 9.0833, lng: 6.0167 }
-};
-
-async function evaluateEnvironmentalGates(stationName: string, customCoords?: { lat: number; lng: number }) {
-  const coords = customCoords || STATION_COORDINATES[stationName] || STATION_COORDINATES["NCRI Ibadan"];
-  const endpoint = `https://api.open-meteo.com/v1/forecast?latitude=${coords.lat}&longitude=${coords.lng}&daily=precipitation_sum&hourly=soil_temperature_0cm`;
-
-  try {
-    const response = await fetch(endpoint);
-    if (!response.ok) throw new Error("Failed to connect to Open-Meteo API");
-
-    const data = await response.json();
-    const currentSoilTemp = data.hourly?.soil_temperature_0cm?.[0] ?? null;
-    const minPracticalSoilTempC = 10;
-    const isTempPassing = currentSoilTemp !== null && currentSoilTemp >= minPracticalSoilTempC;
-
-    const dailyPrecipitation: number[] = data.daily?.precipitation_sum || [];
-    const rollingThreeDayRain = dailyPrecipitation.slice(0, 3).reduce((sum, val) => sum + (val || 0), 0);
-
-    return {
-      success: true,
-      soilTemperature: currentSoilTemp,
-      tempPasses: isTempPassing,
-      rollingThreeDayRainMM: rollingThreeDayRain
-    };
-  } catch (error) {
-    console.error("API Fetch Error:", error);
-    return { success: false, error: "Network error or offline mode." };
-  }
 }
 
 function App() {
@@ -76,15 +41,26 @@ function App() {
   const [progress, setProgress] = useState(0);
 
   const [crop, setCrop] = useState("Maize");
-  const [station, setStation] = useState("NCRI Ibadan");
-  const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | undefined>(undefined);
-  const [detectedLocationName, setDetectedLocationName] = useState("Ibadan, Oyo, Nigeria");
+  const [station, setStation] = useState("");
+  const [returnTo, setReturnTo] = useState<GateState>("READY_CHECK");
 
   const [buttonNearby, setButtonNearby] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
 
+  // Snappy eye frame cycle state (1 to 3) for the welcome screen
+  const [eyeFrame, setEyeFrame] = useState(1);
   const nameButtonRef = useRef<HTMLButtonElement>(null);
 
+  // Fast eye blink/change cadence on welcome screen
+  useEffect(() => {
+    if (state !== "NAME_INPUT") return;
+    const interval = setInterval(() => {
+      setEyeFrame((prev) => (prev % 3) + 1);
+    }, 900); // Snappy transition speed restored
+    return () => clearInterval(interval);
+  }, [state]);
+
+  // Full crop items with clean .jpg public assets
   const crops: CropItem[] = [
     { name: "Maize", color: "#AACAF9", image: "/crops/maize.jpg" },
     { name: "Rice", color: "#FE99D1", image: "/crops/rice.jpg" },
@@ -100,11 +76,14 @@ function App() {
 
   const stations = ["NCRI Ibadan", "Bida Station HQ"];
 
+  /* =================================
+     DYNAMIC THEME & BACKGROUND LOGIC
+  ================================= */
   const activeCropObj = crops.find((c) => c.name.replace(/-\d+$/, "") === crop);
   
   const getBackgroundClass = () => {
     if (state === "CROP_SELECT") return ""; 
-    if (state === "STATION_SELECT" || state === "GPS_CONFIRM") return "bg-olive";
+    if (state === "STATION_SELECT") return "bg-olive";
     if (state === "STATION_UNAVAILABLE") return "bg-burgundy";
     if ([
       "PLANTING_INTRO", "PLANTING_CHECKING", 
@@ -117,11 +96,15 @@ function App() {
 
     if ([
       "PLANTING_RESULT",
-      "FINAL_DECISION_PASS",
+      "FINAL_DECISION_PASS", "FINAL_DECISION_DEADLINE", "FINAL_DECISION_STOP",
       "READY_CHECK", "READY_RESULT", "DEADLINE_CHECK"
     ].includes(state)) return "bg-pink";
     return "bg-red";
   };
+
+  /* =================================
+     NAME BUTTON PROXIMITY
+  ================================= */
 
   const handleNameScreenPointerMove = (
     event: React.PointerEvent<HTMLDivElement>
@@ -129,6 +112,7 @@ function App() {
     if (!nameButtonRef.current) return;
 
     const buttonRect = nameButtonRef.current.getBoundingClientRect();
+
     const buttonCenterX = buttonRect.left + buttonRect.width / 2;
     const buttonCenterY = buttonRect.top + buttonRect.height / 2;
 
@@ -158,8 +142,10 @@ function App() {
     setState("WELCOME_NAME");
   };
 
+  /* =================================
+     AUTO-ADVANCE TIMERS
+  ================================= */
   useEffect(() => {
-    let isMounted = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
 
     if (state === "WELCOME_NAME") {
@@ -178,44 +164,32 @@ function App() {
     if (state === "PLANTING_INTRO") {
       timer = setTimeout(() => {
         setState("PLANTING_CHECKING");
-      }, 1200);
+      }, 1800);
     }
 
     if (state === "PLANTING_CHECKING") {
       timer = setTimeout(() => {
         setState("PLANTING_RESULT");
-      }, 2500);
-    }
-
-    if (state === "TEMP_CHECKING") {
-      evaluateEnvironmentalGates(station, userCoords).then((result) => {
-        if (!isMounted) return;
-
-        timer = setTimeout(() => {
-          if (result.success && result.tempPasses) {
-            setState("TEMP_RESULT");
-          } else {
-            setState("TEMP_RESULT_FAIL");
-          }
-        }, 1200);
-      });
+      }, 7200);
     }
 
     if (state === "RAINFALL_CHECKING") {
-      timer = setTimeout(() => setState("RAINFALL_RESULT"), 1000);
+      timer = setTimeout(() => setState("RAINFALL_RESULT"), 2200);
+    }
+    if (state === "TEMP_CHECKING") {
+      timer = setTimeout(() => setState("TEMP_RESULT"), 2000);
     }
     if (state === "WATERLOG_CHECKING") {
-      timer = setTimeout(() => setState("WATERLOG_RESULT"), 1000);
+      timer = setTimeout(() => setState("WATERLOG_RESULT"), 2400);
     }
     if (state === "PEST_CHECKING") {
-      timer = setTimeout(() => setState("PEST_RESULT"), 1000);
+      timer = setTimeout(() => setState("PEST_RESULT"), 2200);
     }
 
     return () => {
-      isMounted = false;
       if (timer) clearTimeout(timer);
     };
-  }, [state, station, userCoords]);
+  }, [state]);
 
   useEffect(() => {
     if (state !== "INITIALIZING") return;
@@ -257,6 +231,14 @@ function App() {
     setState("STATION_SELECT");
   };
 
+  // Welcome screen character helper using frame 4 for typing/proximity, and 1-3 for snappy eye blink frames
+  const getWelcomeCharacterImage = () => {
+    if (name.length > 0 || buttonNearby) {
+      return "/characters/welcome-buddy (4).png";
+    }
+    return `/characters/welcome-buddy (${eyeFrame}).png`;
+  };
+
   return (
     <main className="plantwhiz">
       <div
@@ -270,6 +252,7 @@ function App() {
 
       <div className={`sun ${["READY_CHECK", "READY_RESULT", "DEADLINE_CHECK"].includes(state) ? "sun-red" : ""}`} />
 
+      <img src="/characters/welcome-cloud.png" className="welcome-cloud" alt="Cloud" />
       <img src="/Image2.png" className="flower" alt="" />
 
       <section className="purple-panel">
@@ -290,8 +273,15 @@ function App() {
             state === "NAME_INPUT" ? handleNameScreenPointerLeave : undefined
           }
         >
+          {/* ================= NAME INPUT (Cinematic Cropped/Blurred with Snappy Eyes) ================= */}
           {state === "NAME_INPUT" && (
             <div className="name-screen">
+              <img
+                src={getWelcomeCharacterImage()}
+                className="animated-character"
+                alt="PlantWhiz Character"
+              />
+
               <div className="name-input-area">
                 <input
                   className="name-input"
@@ -329,8 +319,10 @@ function App() {
             </div>
           )}
 
+          {/* ================= SUBORDINATE SCREENS (Uncropped Miniature Buddies) ================= */}
           {state === "WELCOME_NAME" && (
             <div className="welcome-name">
+              <img src="/characters/welcome-buddy (1).png" alt="Buddy" className="mini-buddy buddy-top-left" />
               <h1>
                 Welcome, <span className="welcome-name-text">{name}.</span>
               </h1>
@@ -339,6 +331,7 @@ function App() {
 
           {state === "INITIALIZING" && (
             <div className="initializing">
+              <img src="/characters/welcome-buddy (4).png" alt="Buddy" className="mini-buddy buddy-top-right" />
               <div className="loader-ring">
                 <span />
               </div>
@@ -349,21 +342,23 @@ function App() {
 
           {state === "READY_CHECK" && (
             <div className="kinetic-intro">
+              <img src="/characters/welcome-buddy (2).png" alt="Buddy" className="mini-buddy buddy-bottom-right" />
               <h1 className="text-dark">
                 Let&apos;s Start With
                 <br />
                 What&apos;s At Hand,
                 <br />
-                Not Sky, {name}!
+                Not Sky!
               </h1>
             </div>
           )}
 
           {state === "READY_RESULT" && (
             <div className="fade-in-up">
+              <img src="/characters/welcome-buddy (3).png" alt="Buddy" className="mini-buddy buddy-top-left" />
               <h1 className="text-dark">Ready To Start?</h1>
               <p className="text-dark-muted">
-                You Have The Key Inputs Needed, {name}
+                You Have The Key Inputs Needed
                 <br />
                 To Begin The Planting Checks.
               </p>
@@ -380,34 +375,47 @@ function App() {
 
           {state === "DEADLINE_CHECK" && (
             <div className="fade-in-up">
+              <img src="/characters/welcome-buddy (1).png" alt="Buddy" className="mini-buddy buddy-top-right" />
               <h1 className="text-dark">
                 Can You Get Everything
                 <br />
                 Ready In Time?
               </h1>
               <p className="text-dark-muted">
-                Can You Get Everything Together, {name}
+                Can You Get Everything Together
                 <br />
                 Before Your Planting Deadline?
               </p>
               <div className="buttons">
                 <button
                   className="pill-button"
-                  onClick={() => setState("READY_CHECK")}
+                  onClick={() => {
+                    setReturnTo("READY_CHECK");
+                    setState("FINAL_DECISION_DEADLINE");
+                  }}
                 >
                   Yes, I Can Get Ready In Time
+                </button>
+                <button
+                  className="pill-button secondary-pill"
+                  onClick={() => {
+                    setReturnTo("READY_CHECK");
+                    setState("FINAL_DECISION_DEADLINE");
+                  }}
+                >
+                  I&apos;m Not Sure I&apos;ll Make It
                 </button>
               </div>
             </div>
           )}
 
-          {/* ================= CROP SELECT ================= */}
           {state === "CROP_SELECT" && (
             <div className="fade-in-up crop-gate-wrapper">
+              <img src="/characters/welcome-buddy (4).png" alt="Buddy" className="mini-buddy buddy-bottom-left" />
               <h1 className="text-dark crop-heading">
                 What Are You
                 <br />
-                Planting, {name}?
+                Planting?
               </h1>
 
               <div 
@@ -435,14 +443,7 @@ function App() {
                         <img 
                           src={item.image} 
                           alt={cleanName}
-                          style={{
-                            width: "38px",
-                            height: "38px",
-                            objectFit: "cover",
-                            borderRadius: "6px",
-                            marginBottom: "4px",
-                            boxShadow: "0 2px 4px rgba(0,0,0,0.2)"
-                          }}
+                          className="arch-card-artwork-img"
                         />
                         <span className={`deck-card-title ${["#F5532C", "#68000B", "#2F2727"].includes(item.color) ? "text-light" : "text-dark"}`}>
                           {cleanName}
@@ -461,101 +462,49 @@ function App() {
             </div>
           )}
 
-          {/* ================= STATION SELECT (Stacked Buttons with Dropdown & GPS) ================= */}
           {state === "STATION_SELECT" && (
             <div className="fade-in-up crop-gate-wrapper">
-              <h1 className="text-dark crop-heading crop-heading-olive" style={{ fontSize: "28px" }}>
+              <img src="/characters/welcome-buddy (2).png" alt="Buddy" className="mini-buddy buddy-top-right" />
+              <h1 className="text-dark crop-heading crop-heading-olive">
                 Where Are You
                 <br />
-                Planting, {name}?
+                Planting?
               </h1>
 
-              <div className="buttons" style={{ position: "absolute", top: "-110px", left: "0", right: "0", zIndex: 20 }}>
-                {/* Station Dropdown selector */}
-                <div style={{ display: "flex", gap: "6px", width: "200px", margin: "0 auto" }}>
-                  <select
-                    className="pill-button"
-                    style={{ width: "160px", padding: "0 10px", textAlign: "center", background: "#A6C4FF" }}
-                    value={station}
-                    onChange={(e) => setStation(e.target.value)}
-                  >
-                    {stations.map((s) => (
-                      <option key={s} value={s}>{s}</option>
-                    ))}
-                  </select>
-                  <button
-                    className="pill-button"
-                    style={{ width: "36px", padding: 0 }}
-                    onClick={() => {
-                      if (station === "Bida Station HQ") {
-                        setUserCoords(undefined);
-                        setState("STATION_UNAVAILABLE");
-                      } else {
-                        setUserCoords(undefined);
-                        setState("PLANTING_INTRO");
-                      }
-                    }}
-                  >
-                    →
-                  </button>
-                </div>
-
-                {/* Pick My Location / GPS Button */}
-                <button
-                  className="pill-button"
-                  style={{ background: "#D8F3DC", width: "200px" }}
-                  onClick={() => {
-                    if (navigator.geolocation) {
-                      navigator.geolocation.getCurrentPosition(
-                        (position) => {
-                          setUserCoords({
-                            lat: position.coords.latitude,
-                            lng: position.coords.longitude
-                          });
-                          setDetectedLocationName("Ibadan, Oyo, Nigeria");
-                          setState("GPS_CONFIRM");
-                        },
-                        () => {
-                          alert("GPS permission denied. Defaulting to NCRI Ibadan.");
-                          setUserCoords(undefined);
+              <div className="station-depth-container">
+                {stations.map((item, index) => {
+                  const isSelected = station === item;
+                  return (
+                    <div
+                      key={item}
+                      className={`station-depth-card ${isSelected ? "station-card-active" : ""}`}
+                      style={{ 
+                        backgroundColor: index === 0 ? "#A6C4FF" : "#FFA6D2",
+                        zIndex: isSelected ? 30 : 10,
+                        transform: isSelected ? "translateY(-6px) scale(1.05)" : "translateY(0) scale(0.95)"
+                      }}
+                      onClick={() => {
+                        setStation(item);
+                        if (item === "Bida Station HQ") {
+                          setState("STATION_UNAVAILABLE");
+                        } else {
                           setState("PLANTING_INTRO");
                         }
-                      );
-                    } else {
-                      alert("Geolocation is not supported by your browser.");
-                      setState("PLANTING_INTRO");
-                    }
-                  }}
-                >
-                  📍 Pick My Location
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* ================= GPS CONFIRMATION SCREEN ================= */}
-          {state === "GPS_CONFIRM" && (
-            <div className="fade-in-up crop-gate-wrapper">
-              <h1 className="text-dark crop-heading crop-heading-olive" style={{ fontSize: "26px" }}>
-                Your Current
-                <br />
-                Location
-              </h1>
-              <div className="bottom-content-box" style={{ margin: "-120px auto 15px", height: "70px", background: "rgba(255,255,255,0.7)" }}>
-                <span className="text-dark" style={{ fontSize: "12px", fontWeight: 700 }}>
-                  📍 {detectedLocationName}
-                </span>
-              </div>
-              <div className="buttons">
-                <button className="pill-button" onClick={() => setState("PLANTING_INTRO")}>
-                  Confirm &amp; Proceed →
-                </button>
+                      }}
+                    >
+                      <span className="deck-card-title text-dark" style={{ fontSize: "13px" }}>
+                        {item}
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
 
           {state === "STATION_UNAVAILABLE" && (
             <div className="fade-in-up">
+              <img src="/characters/welcome-buddy (3).png" alt="Buddy" className="mini-buddy buddy-top-left" />
               <div className="top-card-placeholder" style={{ background: "#A6C4FF" }} />
               <h1 className="text-white" style={{ marginTop: "40px" }}>
                 Oops No
@@ -575,19 +524,21 @@ function App() {
 
           {state === "PLANTING_INTRO" && (
             <>
+              <img src="/characters/welcome-buddy (1).png" alt="Buddy" className="mini-buddy buddy-bottom-right" />
               <h1>
                 Good, {name}.
                 <br />
                 Let Me Check Something...
               </h1>
               <p>
-                Checking {crop} at {userCoords ? "your GPS location" : station}.
+                Checking {crop} At {station}.
               </p>
             </>
           )}
 
           {state === "PLANTING_CHECKING" && (
             <div className="fade-in-up">
+              <img src="/characters/welcome-buddy (4).png" alt="Buddy" className="mini-buddy buddy-top-right" />
               <div className="top-badge-placeholder" style={{ background: "#FFA6D2" }} />
               <h1 className="text-dark standard-screen-heading">
                 Checking
@@ -596,13 +547,14 @@ function App() {
               </h1>
               <div className="bottom-content-box">
                 <span className="status-dot" />
-                Validating season window, {name}...
+                Checking {station}...
               </div>
             </div>
           )}
 
           {state === "PLANTING_RESULT" && (
             <div className="fade-in-up">
+              <img src="/characters/welcome-buddy (2).png" alt="Buddy" className="mini-buddy buddy-top-left" />
               <div className="top-badge-placeholder wave-overlap" style={{ background: "#FFA6D2" }} />
               <h1 className="text-dark standard-screen-heading">
                 You&apos;re Within
@@ -610,13 +562,14 @@ function App() {
                 The Planting Window.
               </h1>
               <div className="bottom-content-box" onClick={() => setState("RAINFALL_CHECKING")} style={{ cursor: "pointer" }}>
-                <span className="deck-card-title text-light">Proceed to Rainfall →</span>
+                <span className="deck-card-title text-light">Next</span>
               </div>
             </div>
           )}
 
           {state === "RAINFALL_CHECKING" && (
             <div className="fade-in-up">
+              <img src="/characters/welcome-buddy (4).png" alt="Buddy" className="mini-buddy buddy-bottom-left" />
               <div className="top-badge-placeholder" style={{ background: "#FFA6D2" }} />
               <h1 className="text-dark standard-screen-heading">
                 Checking
@@ -632,6 +585,7 @@ function App() {
 
           {state === "RAINFALL_RESULT" && (
             <div className="fade-in-up">
+              <img src="/characters/welcome-buddy (3).png" alt="Buddy" className="mini-buddy buddy-top-right" />
               <div className="top-badge-placeholder" style={{ background: "#FFA6D2" }} />
               <h1 className="text-dark standard-screen-heading">
                 Rainfall Is
@@ -639,11 +593,11 @@ function App() {
                 Sufficient.
               </h1>
               <p className="text-dark-muted">
-                Expected precipitation matches optimal requirements for {crop}, {name}.
+                Based on {station} data for {crop}, expected precipitation matches optimal planting requirements, {name}.
               </p>
               <div className="buttons" style={{ marginTop: "15px" }}>
                 <button className="pill-button" onClick={() => setState("TEMP_CHECKING")}>
-                  Proceed To Soil Temperature
+                  Proceed To Temperature
                 </button>
               </div>
             </div>
@@ -651,49 +605,66 @@ function App() {
 
           {state === "TEMP_CHECKING" && (
             <div className="fade-in-up">
-              <div className="top-badge-placeholder" style={{ background: "#AACAF9" }} />
+              <img src="/characters/welcome-buddy (4).png" alt="Buddy" className="mini-buddy buddy-top-left" />
+              <div className="top-badge-placeholder" style={{ background: "#FFA6D2" }} />
               <h1 className="text-dark standard-screen-heading">
-                Checking Live
+                Checking Soil
                 <br />
-                Soil Temperature...
+                Temperature...
               </h1>
               <div className="bottom-content-box">
                 <span className="status-dot" />
-                Querying Open-Meteo satellite feed...
+                Reading thermal sensors...
               </div>
             </div>
           )}
 
           {state === "TEMP_RESULT" && (
             <div className="fade-in-up">
-              <div className="top-badge-placeholder wave-overlap" style={{ background: "#A3B18A" }} />
+              <img src="/characters/welcome-buddy (1).png" alt="Buddy" className="mini-buddy buddy-bottom-right" />
+              <div className="top-badge-placeholder" style={{ background: "#A3B18A" }} />
               <h1 className="text-dark standard-screen-heading">
                 Soil Thermal
                 <br />
-                Levels Optimal (&gt; 10°C).
+                Levels Are Optimal.
               </h1>
-              <div className="bottom-content-box" onClick={() => setState("WATERLOG_CHECKING")} style={{ cursor: "pointer" }}>
-                <span className="deck-card-title text-light">Proceed to Drainage →</span>
+              <p className="text-dark-muted">
+                Current ground temperature at {station} is ideal for root germination, {name}.
+              </p>
+              <div className="buttons" style={{ marginTop: "15px" }}>
+                <button className="pill-button" onClick={() => setState("WATERLOG_CHECKING")}>
+                  Proceed To Drainage Check
+                </button>
               </div>
             </div>
           )}
 
           {state === "TEMP_RESULT_FAIL" && (
             <div className="fade-in-up">
-              <div className="top-badge-placeholder wave-overlap" style={{ background: "#F5532C" }} />
-              <h1 className="text-dark standard-screen-heading">
-                Soil Too Cold
+              <img src="/characters/welcome-buddy (2).png" alt="Buddy" className="mini-buddy buddy-top-right" />
+              <div className="top-badge-placeholder" style={{ background: "#FE99D1" }} />
+              <h1 className="text-light standard-screen-heading">
+                Temperature
                 <br />
-                (&lt; 10°C Floor).
+                Too Cold.
               </h1>
-              <div className="bottom-content-box" onClick={() => setState("STATION_SELECT")} style={{ cursor: "pointer" }}>
-                <span className="deck-card-title text-light">Try Another Location</span>
+              <p className="text-light-muted">
+                Thermal levels at {station} are currently below optimal range for {crop}.
+              </p>
+              <div className="buttons" style={{ marginTop: "15px" }}>
+                <button className="pill-button" onClick={() => setState("TEMP_CHECKING")}>
+                  Re-check Conditions
+                </button>
+                <button className="pill-button secondary-pill-light" onClick={() => setState("FINAL_DECISION_STOP")}>
+                  Explore Alternatives
+                </button>
               </div>
             </div>
           )}
 
           {state === "WATERLOG_CHECKING" && (
             <div className="fade-in-up">
+              <img src="/characters/welcome-buddy (4).png" alt="Buddy" className="mini-buddy buddy-top-left" />
               <div className="top-badge-placeholder" style={{ background: "#FFA6D2" }} />
               <h1 className="text-dark standard-screen-heading">
                 Checking Drainage
@@ -709,6 +680,7 @@ function App() {
 
           {state === "WATERLOG_RESULT" && (
             <div className="fade-in-up">
+              <img src="/characters/welcome-buddy (3).png" alt="Buddy" className="mini-buddy buddy-bottom-left" />
               <div className="top-badge-placeholder" style={{ background: "#FFA6D2" }} />
               <h1 className="text-dark standard-screen-heading">
                 Low Risk Of
@@ -716,7 +688,7 @@ function App() {
                 Waterlogging.
               </h1>
               <p className="text-dark-muted">
-                Drainage index shows clear percolation capacity for {crop}.
+                Drainage index at {station} shows clear percolation capacity for {crop}.
               </p>
               <div className="buttons" style={{ marginTop: "15px" }}>
                 <button className="pill-button" onClick={() => setState("PEST_CHECKING")}>
@@ -728,6 +700,7 @@ function App() {
 
           {state === "PEST_CHECKING" && (
             <div className="fade-in-up">
+              <img src="/characters/welcome-buddy (4).png" alt="Buddy" className="mini-buddy buddy-top-right" />
               <div className="top-badge-placeholder" style={{ background: "#FFA6D2" }} />
               <h1 className="text-dark standard-screen-heading">
                 Checking Pest
@@ -743,6 +716,7 @@ function App() {
 
           {state === "PEST_RESULT" && (
             <div className="fade-in-up">
+              <img src="/characters/welcome-buddy (1).png" alt="Buddy" className="mini-buddy buddy-top-left" />
               <div className="top-badge-placeholder" style={{ background: "#FFA6D2" }} />
               <h1 className="text-dark standard-screen-heading">
                 Pest Risk
@@ -750,24 +724,27 @@ function App() {
                 Assessment.
               </h1>
               <p className="text-dark-muted">
-                AI Pest &amp; Disease Vision Scanner is <strong>Coming Soon</strong>. Confirm management readiness, {name}.
+                AI Pest &amp; Disease Vision Scanner is <strong>Coming Soon</strong>. Confirm management readiness.
               </p>
               <div className="buttons" style={{ marginTop: "12px" }}>
                 <button className="pill-button" onClick={() => setState("FINAL_DECISION_PASS")}>
                   Yes, Management Ready
                 </button>
+                <button className="pill-button secondary-pill" onClick={() => setState("PEST_CHECKING")}>
+                  Re-evaluate Risk
+                </button>
               </div>
             </div>
           )}
 
-          {/* ================= FINAL SUCCESS & YIELD TIMELINE ================= */}
           {state === "FINAL_DECISION_PASS" && (
             <div className="fade-in-up">
+              <img src="/characters/welcome-buddy (2).png" alt="Buddy" className="mini-buddy buddy-bottom-right" />
               <h1 className="text-dark" style={{ marginTop: "25px", fontSize: "28px" }}>
                 Plant Today, {name}! 🌱
               </h1>
               <p className="text-dark-muted" style={{ marginTop: "8px" }}>
-                All environmental gates passed for <strong>{crop}</strong> at <strong>{userCoords ? "your GPS location" : station}</strong>.
+                All environmental gates passed for <strong>{crop}</strong> at <strong>{station}</strong>.
               </p>
               
               <div className="bottom-content-box" style={{ height: "70px", marginTop: "12px", flexDirection: "column", gap: "2px" }}>
@@ -786,6 +763,43 @@ function App() {
               <div className="buttons" style={{ marginTop: "12px" }}>
                 <button className="pill-button free-roam-btn" onClick={() => setState("NAME_INPUT")}>
                   Start New Check
+                </button>
+              </div>
+            </div>
+          )}
+
+          {state === "FINAL_DECISION_DEADLINE" && (
+            <div className="fade-in-up">
+              <img src="/characters/welcome-buddy (3).png" alt="Buddy" className="mini-buddy buddy-top-right" />
+              <h1 className="text-dark" style={{ marginTop: "30px" }}>Is There Still Enough Time?</h1>
+              <p className="text-dark-muted">Evaluate your current timeline before proceeding.</p>
+              <div className="buttons" style={{ marginTop: "20px" }}>
+                <button className="pill-button" onClick={() => setState(returnTo)}>
+                  Yes, Proceed
+                </button>
+                <button className="pill-button secondary-pill" onClick={() => setState("FINAL_DECISION_STOP")}>
+                  No, Out of Time
+                </button>
+              </div>
+            </div>
+          )}
+
+          {state === "FINAL_DECISION_STOP" && (
+            <div className="fade-in-up">
+              <img src="/characters/welcome-buddy (1).png" alt="Buddy" className="mini-buddy buddy-top-left" />
+              <h1 className="text-dark" style={{ fontSize: "24px", marginTop: "10px" }}>Recommended Alternatives</h1>
+              <div className="buttons" style={{ gap: "6px", marginTop: "12px" }}>
+                <button className="pill-button" onClick={() => console.log("Early variety")}>
+                  Use Early Variety
+                </button>
+                <button className="pill-button" onClick={() => console.log("Different crop")}>
+                  Choose Different Crop
+                </button>
+                <button className="pill-button" onClick={() => console.log("Forage")}>
+                  Switch to Forage
+                </button>
+                <button className="pill-button secondary-pill" onClick={() => console.log("Reduced yield")}>
+                  Accept Reduced Yield
                 </button>
               </div>
             </div>

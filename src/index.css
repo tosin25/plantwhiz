@@ -18,10 +18,6 @@ body {
   background: #111;
 }
 
-/* =================================
-   MOBILE FRAME
-================================= */
-
 .plantwhiz {
   position: relative;
   width: min(100vw, 430px);
@@ -31,10 +27,6 @@ body {
   background: #f5532c;
   cursor: url("/cursor.svg"), auto;
 }
-
-/* =================================
-   DYNAMIC BACKGROUNDS
-================================= */
 
 .dynamic-background {
   position: absolute;
@@ -50,16 +42,14 @@ body {
 .bg-burgundy { background: #68000B !important; }
 .bg-green { background: #52B788 !important; }
 
-/* =================================
-   SUN, FLOWER & ANIMATED CLOUD
-================================= */
-
+/* SUN — now scales with the container instead of staying a fixed 80px.
+   min() caps it at 80px on wide screens, shrinks proportionally below 430px. */
 .sun {
   position: absolute;
-  width: 80px;
-  height: 80px;
-  top: 50px;
-  left: 57px;
+  width: min(80px, 18.6vw);
+  height: min(80px, 18.6vw);
+  top: min(15px, 3.49vw);
+  left: min(15px, 3.49vw);
   border-radius: 50%;
   background: #fdf3e7;
   filter: blur(2px);
@@ -69,12 +59,13 @@ body {
 
 .sun.sun-red { background: #f5532c; }
 
+/* CLOUD — same scaling approach, sized down and pinned to top-left with the sun. */
 .welcome-cloud {
   position: absolute;
-  width: 140px;
+  width: min(100px, 23.26vw);
   height: auto;
-  top: 25px;
-  left: 85px;
+  top: min(10px, 2.33vw);
+  left: min(45px, 10.47vw);
   z-index: 5;
   pointer-events: none;
   filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.15));
@@ -87,21 +78,19 @@ body {
   100% { transform: translate(14px, 2px) scale(1); }
 }
 
+/* FLOWER — scales proportionally too. It intentionally bleeds past the frame edges,
+   so it keeps its oversized ratio, just shrinking in step with the container. */
 .flower {
   position: absolute;
-  width: 566px;
-  height: 607px;
-  top: 220.5px;
+  width: min(566px, 131.63vw);
+  height: min(607px, 141.16vw);
+  top: min(220.5px, 51.28vw);
   left: 45%;
   transform: translate(-50%, -50%);
   object-fit: contain;
   border-radius: 20px;
   z-index: 2;
 }
-
-/* =================================
-   PURPLE PANEL & CIRCLES
-================================= */
 
 .purple-panel {
   position: absolute;
@@ -120,13 +109,15 @@ body {
   z-index: 1;
 }
 
-.circle-1 { width: 72px; height: 58px; left: -25px; top: -25px; }
-.circle-2 { width: 78px; height: 62px; left: 35px; top: -35px; }
-.circle-3 { width: 82px; height: 65px; left: 95px; top: -40px; }
-.circle-4 { width: 78px; height: 88px; left: 155px; top: -65px; }
-.circle-5 { width: 84px; height: 84px; left: 215px; top: -72px; }
-.circle-6 { width: 80px; height: 63px; left: 275px; top: -45px; }
-.circle-7 { width: 78px; height: 60px; left: 335px; top: -28px; }
+/* ROOT CIRCLES — converted to scale with the container. Negative top/left values
+   use max() instead of min() since scaling down should make them LESS negative. */
+.circle-1 { width: min(72px, 16.74vw); height: min(58px, 13.49vw); left: max(-25px, -5.81vw); top: max(-25px, -5.81vw); }
+.circle-2 { width: min(78px, 18.14vw); height: min(62px, 14.42vw); left: min(35px, 8.14vw); top: max(-35px, -8.14vw); }
+.circle-3 { width: min(82px, 19.07vw); height: min(65px, 15.12vw); left: min(95px, 22.09vw); top: max(-40px, -9.30vw); }
+.circle-4 { width: min(78px, 18.14vw); height: min(88px, 20.47vw); left: min(155px, 36.05vw); top: max(-65px, -15.12vw); }
+.circle-5 { width: min(84px, 19.53vw); height: min(84px, 19.53vw); left: min(215px, 50.00vw); top: max(-72px, -16.74vw); }
+.circle-6 { width: min(80px, 18.60vw); height: min(63px, 14.65vw); left: min(275px, 63.95vw); top: max(-45px, -10.47vw); }
+.circle-7 { width: min(78px, 18.14vw); height: min(60px, 13.95vw); left: min(335px, 77.91vw); top: max(-28px, -6.51vw); }
 
 .conversation {
   position: relative;
@@ -135,10 +126,6 @@ body {
   margin: 0 auto;
   padding-top: 30px;
 }
-
-/* =================================
-   CINEMATIC CROPPED & BLURRED WELCOME CHARACTER
-================================= */
 
 @keyframes portraitFloat {
   0% { transform: translateY(0px) scale(1.15); }
@@ -154,17 +141,11 @@ body {
   margin: -25px auto 8px auto;
   display: block;
   animation: portraitFloat 4s ease-in-out infinite;
-  
   -webkit-mask-image: radial-gradient(circle, rgba(0,0,0,1) 50%, rgba(0,0,0,0) 90%);
   mask-image: radial-gradient(circle, rgba(0,0,0,1) 50%, rgba(0,0,0,0) 90%);
-  
   filter: drop-shadow(0 10px 20px rgba(0, 0, 0, 0.35));
   transition: transform 0.3s ease;
 }
-
-/* =================================
-   UNCROPPED MINIATURE BUDDY (Subordinate Screens)
-================================= */
 
 .mini-buddy {
   position: absolute;
@@ -177,38 +158,15 @@ body {
   filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.3));
 }
 
-.buddy-top-left {
-  top: -35px;
-  left: -10px;
-  transform: rotate(-8deg);
-}
-
-.buddy-top-right {
-  top: -35px;
-  right: -10px;
-  transform: rotate(8deg);
-}
-
-.buddy-bottom-right {
-  bottom: -20px;
-  right: -10px;
-  transform: rotate(5deg);
-}
-
-.buddy-bottom-left {
-  bottom: -20px;
-  left: -10px;
-  transform: rotate(-5deg);
-}
+.buddy-top-left { top: -35px; left: -10px; transform: rotate(-8deg); }
+.buddy-top-right { top: -35px; right: -10px; transform: rotate(8deg); }
+.buddy-bottom-right { bottom: -20px; right: -10px; transform: rotate(5deg); }
+.buddy-bottom-left { bottom: -20px; left: -10px; transform: rotate(-5deg); }
 
 @keyframes miniFloat {
   0% { transform: translateY(0px) rotate(0deg); }
   100% { transform: translateY(-5px) rotate(4deg); }
 }
-
-/* =================================
-   HEADINGS & TEXT STYLING
-================================= */
 
 h1 {
   position: relative;
@@ -236,6 +194,10 @@ h1 {
   margin-bottom: 0px;
 }
 
+.crop-heading-olive {
+  color: #2F2727 !important;
+}
+
 p {
   position: relative;
   top: -15px;
@@ -255,10 +217,6 @@ p {
 }
 
 .text-dark { color: #2F2727 !important; }
-
-/* =================================
-   NAME SCREEN & INPUT
-================================= */
 
 .name-screen {
   position: relative;
@@ -387,10 +345,6 @@ p {
   margin-bottom: 12px;
 }
 
-/* =================================
-   CROP SCROLLER & TOUCH SUPPORT
-================================= */
-
 .curved-arch-scroller {
   touch-action: pan-x;
   overflow-x: auto;
@@ -502,6 +456,12 @@ p {
   border: 1px solid rgba(255, 255, 255, 0.3) !important;
 }
 
+.secondary-pill-light {
+  background: rgba(255, 255, 255, 0.15) !important;
+  color: #fff9f9 !important;
+  border: 1px solid rgba(255, 255, 255, 0.35) !important;
+}
+
 .deck-card-title {
   font-family: "Montserrat", sans-serif;
   font-size: 11px;
@@ -551,7 +511,7 @@ p {
 
 .standard-screen-heading {
   position: relative !important;
-  top: 0px !important;
+  top: -370px !important;
   margin-top: 5px !important;
   margin-bottom: 12px !important;
 }
